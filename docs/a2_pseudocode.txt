@@ -1,0 +1,32 @@
+# Custom TCP Algorithm
+
+General idea: gentler Reno
+
+Parameters:  β = 0.7            multiplicative-decrease factor
+             a = 0.5            additive increase, in packets per RTT
+             D = max(4 ms, min_rtt/8)    RTT-rise threshold for leaving slow start
+State:       cwnd = 10, ssthresh = ∞, min_rtt = ∞, full_bw = 0, flat_rounds = 0
+
+On every ACK:
+    min_rtt ← min(min_rtt, latest RTT sample)
+    if in slow start (cwnd < ssthresh):
+        cwnd ← cwnd + 1                         # doubles each RTT
+    else:
+        cwnd ← cwnd + a / cwnd                  # +a packets per RTT
+
+Once per RTT, during slow start only:
+    bw ← bytes delivered in the last RTT / RTT       # measured throughput
+    if bw ≥ 1.25 · full_bw: full_bw ← bw; flat_rounds ← 0
+    else:                   flat_rounds ← flat_rounds + 1
+    if (srtt − min_rtt > D) or (flat_rounds ≥ 3):   # queue is building or the pipe is full
+        ssthresh ← cwnd                         # leave slow start without cutting
+
+On 3 duplicate ACKs / SACK loss (fast retransmit):
+    ssthresh ← max(β · cwnd, 2)
+    cwnd ← ssthresh                             # at most once per RTT (one cut per loss event)
+    fast recovery as in Reno / NewReno
+
+On retransmission timeout (RTO):
+    ssthresh ← max(β · cwnd, 2)
+    cwnd ← 1                                    # severe congestion: restart with slow start
+    RTO ← 2 · RTO (exponential backoff); RTO is computed from srtt and rttvar
