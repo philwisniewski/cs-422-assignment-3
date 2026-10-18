@@ -1,0 +1,439 @@
+{
+  "created": "2026-10-18 13:32:27 -0400",
+  "gentle_reno_bpf_before": {
+    "struct_ops": [
+      {
+        "id": 19,
+        "name": "gentle_reno",
+        "kernel_struct_ops": "tcp_congestion_ops"
+      }
+    ],
+    "counters": {
+      "stat_init": 0,
+      "stat_loss_events": 0,
+      "stat_ss_exit_delay": 0,
+      "stat_ss_exit_bw": 0,
+      "stat_undo": 0
+    }
+  },
+  "command": "python3 run_experiments.py --servers local_servers.csv -n 3 -t 10 -r 1",
+  "args": {
+    "servers": "local_servers.csv",
+    "num_dests": 3,
+    "duration": 10.0,
+    "interval": 0.2,
+    "reps": 1,
+    "algorithms": [
+      "cubic",
+      "reno",
+      "bbr",
+      "gentle_reno"
+    ],
+    "out": null,
+    "seed": null,
+    "continent": null,
+    "country": null,
+    "ipv4_only": false,
+    "max_attempts": null,
+    "probe_duration": 3.0,
+    "ports_per_server": 3,
+    "run_retries": 2,
+    "retry_backoff": 10.0,
+    "pause": 2.0,
+    "connect_timeout": 5.0,
+    "ctrl_timeout": 15.0,
+    "stall_timeout": 15.0,
+    "blksize": 131072,
+    "rep_dest": null,
+    "warmup": 0.0,
+    "plot_only": null
+  },
+  "seed": 1129830686,
+  "host": {
+    "kernel": "6.17.0-1022-nvidia",
+    "uname": "Linux jensen 6.17.0-1022-nvidia #22-Ubuntu SMP PREEMPT_DYNAMIC Wed May 27 19:31:58 UTC 2026 aarch64 aarch64",
+    "python": "3.12.3",
+    "hostname": "jensen",
+    "default_cc": "cubic",
+    "available_cc": "reno cubic bbr gentle_reno",
+    "allowed_cc": "reno cubic bbr",
+    "in_docker": false,
+    "cc_check": {
+      "cubic": "cubic",
+      "reno": "reno",
+      "bbr": "bbr",
+      "gentle_reno": "gentle_reno"
+    }
+  },
+  "servers_file": "/home/phil/proj/cs-422-assignment-3/local_servers.csv",
+  "servers_parsed": 3,
+  "tcp_info_format": [
+    {
+      "field": "state",
+      "ctype": "__u8",
+      "offset": 0
+    },
+    {
+      "field": "ca_state",
+      "ctype": "__u8",
+      "offset": 1
+    },
+    {
+      "field": "retransmits",
+      "ctype": "__u8",
+      "offset": 2
+    },
+    {
+      "field": "probes",
+      "ctype": "__u8",
+      "offset": 3
+    },
+    {
+      "field": "backoff",
+      "ctype": "__u8",
+      "offset": 4
+    },
+    {
+      "field": "options",
+      "ctype": "__u8",
+      "offset": 5
+    },
+    {
+      "field": "wscale",
+      "ctype": "__u8",
+      "offset": 6
+    },
+    {
+      "field": "app_limited_flags",
+      "ctype": "__u8",
+      "offset": 7
+    },
+    {
+      "field": "rto",
+      "ctype": "__u32",
+      "offset": 8
+    },
+    {
+      "field": "ato",
+      "ctype": "__u32",
+      "offset": 12
+    },
+    {
+      "field": "snd_mss",
+      "ctype": "__u32",
+      "offset": 16
+    },
+    {
+      "field": "rcv_mss",
+      "ctype": "__u32",
+      "offset": 20
+    },
+    {
+      "field": "unacked",
+      "ctype": "__u32",
+      "offset": 24
+    },
+    {
+      "field": "sacked",
+      "ctype": "__u32",
+      "offset": 28
+    },
+    {
+      "field": "lost",
+      "ctype": "__u32",
+      "offset": 32
+    },
+    {
+      "field": "retrans",
+      "ctype": "__u32",
+      "offset": 36
+    },
+    {
+      "field": "fackets",
+      "ctype": "__u32",
+      "offset": 40
+    },
+    {
+      "field": "last_data_sent",
+      "ctype": "__u32",
+      "offset": 44
+    },
+    {
+      "field": "last_ack_sent",
+      "ctype": "__u32",
+      "offset": 48
+    },
+    {
+      "field": "last_data_recv",
+      "ctype": "__u32",
+      "offset": 52
+    },
+    {
+      "field": "last_ack_recv",
+      "ctype": "__u32",
+      "offset": 56
+    },
+    {
+      "field": "pmtu",
+      "ctype": "__u32",
+      "offset": 60
+    },
+    {
+      "field": "rcv_ssthresh",
+      "ctype": "__u32",
+      "offset": 64
+    },
+    {
+      "field": "rtt",
+      "ctype": "__u32",
+      "offset": 68
+    },
+    {
+      "field": "rttvar",
+      "ctype": "__u32",
+      "offset": 72
+    },
+    {
+      "field": "snd_ssthresh",
+      "ctype": "__u32",
+      "offset": 76
+    },
+    {
+      "field": "snd_cwnd",
+      "ctype": "__u32",
+      "offset": 80
+    },
+    {
+      "field": "advmss",
+      "ctype": "__u32",
+      "offset": 84
+    },
+    {
+      "field": "reordering",
+      "ctype": "__u32",
+      "offset": 88
+    },
+    {
+      "field": "rcv_rtt",
+      "ctype": "__u32",
+      "offset": 92
+    },
+    {
+      "field": "rcv_space",
+      "ctype": "__u32",
+      "offset": 96
+    },
+    {
+      "field": "total_retrans",
+      "ctype": "__u32",
+      "offset": 100
+    },
+    {
+      "field": "pacing_rate",
+      "ctype": "__u64",
+      "offset": 104
+    },
+    {
+      "field": "max_pacing_rate",
+      "ctype": "__u64",
+      "offset": 112
+    },
+    {
+      "field": "bytes_acked",
+      "ctype": "__u64",
+      "offset": 120
+    },
+    {
+      "field": "bytes_received",
+      "ctype": "__u64",
+      "offset": 128
+    },
+    {
+      "field": "segs_out",
+      "ctype": "__u32",
+      "offset": 136
+    },
+    {
+      "field": "segs_in",
+      "ctype": "__u32",
+      "offset": 140
+    },
+    {
+      "field": "notsent_bytes",
+      "ctype": "__u32",
+      "offset": 144
+    },
+    {
+      "field": "min_rtt",
+      "ctype": "__u32",
+      "offset": 148
+    },
+    {
+      "field": "data_segs_in",
+      "ctype": "__u32",
+      "offset": 152
+    },
+    {
+      "field": "data_segs_out",
+      "ctype": "__u32",
+      "offset": 156
+    },
+    {
+      "field": "delivery_rate",
+      "ctype": "__u64",
+      "offset": 160
+    },
+    {
+      "field": "busy_time",
+      "ctype": "__u64",
+      "offset": 168
+    },
+    {
+      "field": "rwnd_limited",
+      "ctype": "__u64",
+      "offset": 176
+    },
+    {
+      "field": "sndbuf_limited",
+      "ctype": "__u64",
+      "offset": 184
+    },
+    {
+      "field": "delivered",
+      "ctype": "__u32",
+      "offset": 192
+    },
+    {
+      "field": "delivered_ce",
+      "ctype": "__u32",
+      "offset": 196
+    },
+    {
+      "field": "bytes_sent",
+      "ctype": "__u64",
+      "offset": 200
+    },
+    {
+      "field": "bytes_retrans",
+      "ctype": "__u64",
+      "offset": 208
+    },
+    {
+      "field": "dsack_dups",
+      "ctype": "__u32",
+      "offset": 216
+    },
+    {
+      "field": "reord_seen",
+      "ctype": "__u32",
+      "offset": 220
+    },
+    {
+      "field": "rcv_ooopack",
+      "ctype": "__u32",
+      "offset": 224
+    },
+    {
+      "field": "snd_wnd",
+      "ctype": "__u32",
+      "offset": 228
+    },
+    {
+      "field": "rcv_wnd",
+      "ctype": "__u32",
+      "offset": 232
+    },
+    {
+      "field": "rehash",
+      "ctype": "__u32",
+      "offset": 236
+    },
+    {
+      "field": "total_rto",
+      "ctype": "__u16",
+      "offset": 240
+    },
+    {
+      "field": "total_rto_recoveries",
+      "ctype": "__u16",
+      "offset": 242
+    },
+    {
+      "field": "total_rto_time",
+      "ctype": "__u32",
+      "offset": 244
+    }
+  ],
+  "units": {
+    "t_s": "s since transfer start (monotonic clock)",
+    "timestamp_unix": "s (wall clock)",
+    "goodput_bps": "bit/s = d_bytes_acked_B*8/dt_s",
+    "snd_cwnd_seg": "segments",
+    "cwnd_B": "bytes = snd_cwnd*snd_mss",
+    "srtt_us/rttvar_us/min_rtt_us/rto_us": "microseconds",
+    "*_B": "bytes",
+    "*_seg": "segments",
+    "*_Bps": "bytes/s",
+    "*_us": "microseconds",
+    "d_*": "difference vs previous sample (cumulative counters)",
+    "loss proxy": "d_retrans_seg = \u0394tcpi_total_retrans per interval"
+  },
+  "selected_destinations": [
+    {
+      "host": "10.77.3.2",
+      "ports": [
+        5201
+      ],
+      "gbps": "0.02",
+      "continent": "Local",
+      "country": "XX",
+      "site": "slow",
+      "provider": "testbed",
+      "port": 5201
+    },
+    {
+      "host": "10.77.1.2",
+      "ports": [
+        5201
+      ],
+      "gbps": "0.2",
+      "continent": "Local",
+      "country": "XX",
+      "site": "lan",
+      "provider": "testbed",
+      "port": 5201
+    },
+    {
+      "host": "10.77.2.2",
+      "ports": [
+        5201
+      ],
+      "gbps": "0.05",
+      "continent": "Local",
+      "country": "XX",
+      "site": "wan",
+      "provider": "testbed",
+      "port": 5201
+    }
+  ],
+  "selection_attempts": 3,
+  "destination_shortfall": 0,
+  "finished": "2026-10-18 13:35:14 -0400",
+  "gentle_reno_bpf_after": {
+    "struct_ops": [
+      {
+        "id": 19,
+        "name": "gentle_reno",
+        "kernel_struct_ops": "tcp_congestion_ops"
+      }
+    ],
+    "counters": {
+      "stat_init": 3,
+      "stat_loss_events": 0,
+      "stat_ss_exit_delay": 0,
+      "stat_ss_exit_bw": 3,
+      "stat_undo": 0
+    }
+  },
+  "representative_destination": "10.77.2.2:5201"
+}

@@ -1,0 +1,4 @@
+attempt,host,port,ports_listed,country,site,provider,outcome,status,error_kind,error_phase,error_msg,probe_goodput_mbps
+1,10.77.3.2,5201,1,XX,slow,testbed,selected,ok,,,,16.81
+2,10.77.1.2,5201,1,XX,lan,testbed,selected,ok,,,,190.12
+3,10.77.2.2,5201,1,XX,wan,testbed,selected,ok,,,,44.61

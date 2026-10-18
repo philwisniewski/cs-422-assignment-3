@@ -1,0 +1,16 @@
+attempt,host,port,ports_listed,country,site,provider,outcome,status,error_kind,error_phase,error_msg,probe_goodput_mbps
+1,41.110.39.130,5201,1,DZ,Algiers,DATAPACKET,selected,ok,,,,59.35
+2,a210.speedtest.wobcom.de,5201,1,DE,Frankfurt,WOBCOM,rejected,failed,busy,param_exchange,server answered ACCESS_DENIED (busy with another test or refusing this client),
+3,verb.vanilla.co.za,5201,10,SA,Cape Town,Vanilla,rejected,failed,connect_error,control_connect,[Errno 101] Network is unreachable,
+4,akl.linetest.nz,5301,9,NZ,Auckland,2Degrees,selected,ok,,,,37.02
+5,lon.speedtest.clouvider.net,5207,10,GB,London,Cloudvider,selected,ok,,,,77.51
+6,speedtest.sin1.sg.leaseweb.net,5207,10,SG,Singapore,LeaseWeb,selected,ok,,,,22.1
+7,speedtest.wdc2.us.leaseweb.net,5203,10,US,Washington,LeaseWeb,selected,ok,,,,213.2
+8,72.1.86.46,30006,9,NZ,Auckland,FortiSASE,selected,ok,,,,29.67
+9,speed1.fiberby.dk,9212,40,DK,Copenhagen,Fiberby,selected,ok,,,,20.77
+10,41.210.185.162,5201,1,UG,Kampala,DATAPACKET,selected,ok,,,,21.19
+11,37.19.216.1,5201,1,US,Houston,DATAPACKET,rejected,failed,busy,param_exchange,server answered ACCESS_DENIED (busy with another test or refusing this client),
+12,69.48.238.200,30001,9,AE,Dubai,FortiSASE,rejected,failed,premature_close,running,server closed the control connection during the test,
+13,speedtest.nyc1.us.leaseweb.net,5207,10,US,New York City,LeaseWeb,selected,ok,,,,484.49
+14,speedtest.iway.ch,5201,1,CH,Zürich,iWay,rejected,failed,busy,param_exchange,server answered ACCESS_DENIED (busy with another test or refusing this client),
+15,speedtest.phx1.us.leaseweb.net,5206,10,US,Phoenix,LeaseWeb,selected,ok,,,,176.63

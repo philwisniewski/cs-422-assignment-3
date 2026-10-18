@@ -1,5 +1,4 @@
 __pycache__/
-results/
 bpf/vmlinux.h
 bpf/*.o
 local_servers.csv

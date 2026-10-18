@@ -1,0 +1,44 @@
+### Goodput per destination and algorithm (Mbit/s, all interval samples)
+
+| destination | algorithm | algorithm_actual | runs | samples | min_mbps | median_mbps | mean_mbps | p95_mbps |
+|---|---|---|---|---|---|---|---|---|
+| 41.110.39.130:5201 | cubic | cubic | 5 | 250 | 0.00 | 98.97 | 92.48 | 145.09 |
+| 41.110.39.130:5201 | reno | reno | 5 | 250 | 0.00 | 48.92 | 53.72 | 107.54 |
+| 41.110.39.130:5201 | bbr | bbr | 5 | 250 | 0.00 | 111.88 | 95.59 | 171.64 |
+| 41.110.39.130:5201 | gentle_reno | gentle_reno | 5 | 250 | 0.58 | 8.73 | 13.04 | 39.90 |
+| akl.linetest.nz:5301 | cubic | cubic | 5 | 250 | 0.00 | 77.03 | 66.96 | 106.27 |
+| akl.linetest.nz:5301 | reno | reno | 5 | 250 | 0.23 | 38.29 | 36.84 | 70.74 |
+| akl.linetest.nz:5301 | bbr | bbr | 5 | 250 | 0.00 | 101.89 | 72.91 | 125.35 |
+| akl.linetest.nz:5301 | gentle_reno | gentle_reno | 5 | 250 | 0.58 | 5.38 | 9.43 | 31.63 |
+| lon.speedtest.clouvider.net:5207 | cubic | cubic | 5 | 250 | 0.58 | 58.32 | 65.51 | 184.77 |
+| lon.speedtest.clouvider.net:5207 | reno | reno | 5 | 250 | 0.58 | 71.02 | 77.47 | 133.32 |
+| lon.speedtest.clouvider.net:5207 | bbr | bbr | 5 | 250 | 0.64 | 194.81 | 164.03 | 234.54 |
+| lon.speedtest.clouvider.net:5207 | gentle_reno | gentle_reno | 5 | 250 | 0.58 | 11.30 | 11.13 | 14.44 |
+| speedtest.sin1.sg.leaseweb.net:5207 | cubic | cubic | 5 | 250 | 0.00 | 24.08 | 28.15 | 75.80 |
+| speedtest.sin1.sg.leaseweb.net:5207 | reno | reno | 5 | 250 | 0.00 | 30.42 | 34.21 | 81.99 |
+| speedtest.sin1.sg.leaseweb.net:5207 | bbr | bbr | 5 | 250 | 0.00 | 55.96 | 56.53 | 115.57 |
+| speedtest.sin1.sg.leaseweb.net:5207 | gentle_reno | gentle_reno | 5 | 250 | 0.00 | 3.18 | 3.93 | 10.27 |
+| speedtest.wdc2.us.leaseweb.net:5203 | cubic | cubic | 5 | 250 | 13.21 | 285.79 | 320.77 | 655.93 |
+| speedtest.wdc2.us.leaseweb.net:5203 | reno | reno | 5 | 250 | 14.47 | 221.37 | 234.29 | 337.76 |
+| speedtest.wdc2.us.leaseweb.net:5203 | bbr | bbr | 5 | 250 | 12.38 | 450.91 | 414.34 | 644.62 |
+| speedtest.wdc2.us.leaseweb.net:5203 | gentle_reno | gentle_reno | 5 | 250 | 2.43 | 54.37 | 52.99 | 79.19 |
+| 72.1.86.46:30006 | cubic | cubic | 5 | 250 | 0.00 | 52.52 | 48.41 | 106.26 |
+| 72.1.86.46:30006 | reno | reno | 5 | 250 | 0.00 | 40.46 | 37.07 | 65.13 |
+| 72.1.86.46:30006 | bbr | bbr | 5 | 250 | 0.00 | 94.91 | 74.30 | 117.36 |
+| 72.1.86.46:30006 | gentle_reno | gentle_reno | 5 | 250 | 0.00 | 5.56 | 8.10 | 19.72 |
+| speed1.fiberby.dk:9212 | cubic | cubic | 3 | 150 | 0.06 | 0.12 | 6.58 | 33.86 |
+| speed1.fiberby.dk:9212 | reno | reno | 2 | 100 | 0.06 | 0.12 | 6.30 | 37.52 |
+| speed1.fiberby.dk:9212 | bbr | bbr | 3 | 150 | 0.06 | 0.12 | 6.44 | 42.11 |
+| speed1.fiberby.dk:9212 | gentle_reno | gentle_reno | 2 | 100 | 0.58 | 11.99 | 22.29 | 49.66 |
+| 41.210.185.162:5201 | cubic | cubic | 5 | 250 | 0.00 | 50.25 | 44.56 | 82.21 |
+| 41.210.185.162:5201 | reno | reno | 5 | 250 | 0.00 | 31.90 | 35.48 | 71.96 |
+| 41.210.185.162:5201 | bbr | bbr | 5 | 250 | 0.00 | 60.82 | 60.13 | 115.07 |
+| 41.210.185.162:5201 | gentle_reno | gentle_reno | 5 | 250 | 0.00 | 4.17 | 3.66 | 5.65 |
+| speedtest.nyc1.us.leaseweb.net:5207 | cubic | cubic | 5 | 250 | 25.58 | 320.81 | 373.86 | 722.92 |
+| speedtest.nyc1.us.leaseweb.net:5207 | reno | reno | 5 | 250 | 21.47 | 257.67 | 275.41 | 403.60 |
+| speedtest.nyc1.us.leaseweb.net:5207 | bbr | bbr | 5 | 250 | 1.10 | 451.33 | 445.07 | 818.41 |
+| speedtest.nyc1.us.leaseweb.net:5207 | gentle_reno | gentle_reno | 5 | 250 | 4.41 | 61.49 | 100.14 | 342.65 |
+| speedtest.phx1.us.leaseweb.net:5206 | cubic | cubic | 5 | 250 | 0.00 | 232.08 | 224.22 | 347.37 |
+| speedtest.phx1.us.leaseweb.net:5206 | reno | reno | 5 | 250 | 3.54 | 173.10 | 190.76 | 308.59 |
+| speedtest.phx1.us.leaseweb.net:5206 | bbr | bbr | 5 | 250 | 1.33 | 262.42 | 256.65 | 441.35 |
+| speedtest.phx1.us.leaseweb.net:5206 | gentle_reno | gentle_reno | 5 | 250 | 4.03 | 28.52 | 28.59 | 42.13 |

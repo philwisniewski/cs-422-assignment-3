@@ -1,0 +1,11 @@
+dest_index,host,port,continent,country,site,provider,gbps
+1,41.110.39.130,5201,Africa,DZ,Algiers,DATAPACKET,10
+2,akl.linetest.nz,5301,Oceania,NZ,Auckland,2Degrees,10
+3,lon.speedtest.clouvider.net,5207,Europe,GB,London,Cloudvider,10
+4,speedtest.sin1.sg.leaseweb.net,5207,Asia,SG,Singapore,LeaseWeb,10
+5,speedtest.wdc2.us.leaseweb.net,5203,North America,US,Washington,LeaseWeb,10
+6,72.1.86.46,30006,Oceania,NZ,Auckland,FortiSASE,10
+7,speed1.fiberby.dk,9212,Europe,DK,Copenhagen,Fiberby,25
+8,41.210.185.162,5201,Africa,UG,Kampala,DATAPACKET,2x10
+9,speedtest.nyc1.us.leaseweb.net,5207,North America,US,New York City,LeaseWeb,10
+10,speedtest.phx1.us.leaseweb.net,5206,North America,US,Phoenix,LeaseWeb,10

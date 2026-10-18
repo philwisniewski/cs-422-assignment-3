@@ -1,0 +1,4 @@
+dest_index,host,port,continent,country,site,provider,gbps
+1,10.77.3.2,5201,Local,XX,slow,testbed,0.02
+2,10.77.1.2,5201,Local,XX,lan,testbed,0.2
+3,10.77.2.2,5201,Local,XX,wan,testbed,0.05
