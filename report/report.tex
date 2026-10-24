@@ -1,0 +1,555 @@
+% CS 422 Assignment 3 report. Build with:  python3 report/make_report.py
+% (writes report/generated/*.tex from results/<run>/ and runs pdflatex twice).
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!60!black,citecolor=blue!50!black]{hyperref}
+
+\input{generated/data.tex}
+
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+        frame=single, rulecolor=\color{black!25}, backgroundcolor=\color{black!3},
+        xleftmargin=4pt, xrightmargin=4pt, aboveskip=6pt, belowskip=6pt,
+        breaklines=true, showstringspaces=false,
+        % listings reads bytes, so map the pseudocode's UTF-8 symbols explicitly
+        literate={β}{{$\beta$}}1 {←}{{$\leftarrow$}}1 {∞}{{$\infty$}}1
+                 {·}{{$\cdot$}}1 {−}{{$-$}}1 {≥}{{$\geq$}}1}
+\captionsetup{font=small, labelfont=bf}
+\setlength{\parskip}{4pt}
+\setlength{\emergencystretch}{3em}
+\sloppy
+\newcommand{\alg}[1]{\texttt{#1}}
+\newcommand{\GR}{Gentle Reno}
+
+\newcommand{\aiuse}{%
+AI tools (Claude, via Claude Code) were used to help brainstorm the design, draft
+the eBPF program, the experiment and analysis scripts, the local test network, the
+documentation, and the generator for this report. We reviewed the generated code,
+built and ran it on our machine, and checked the behaviour of the algorithm on live
+connections (loss cut ratio, slow-start exit counters, and the algorithm reported by
+the socket).}
+% ---------------------------------------------------------------------------
+
+\title{\textbf{CS 422 Assignment 3: TCP Congestion Control Implementation}\\[4pt]
+\large Option 1: \GR{} as an eBPF \texttt{struct\_ops} congestion control}
+\author{Daniel Chindris \and Saverio Miller \and Richie Tan \and Philip Wisniewski \and Emma Zheng}
+\date{CS 422: Computer Networks, Fall 2026\\[2pt]
+Repository: \href{\repourl}{\nolinkurl{github.com/philwisniewski/cs-422-assignment-3}}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent We implemented the congestion control algorithm from Assignment~2, Question~3(b),
+``\GR{}'', as an eBPF \texttt{struct\_ops} program that registers a kernel
+\texttt{tcp\_congestion\_ops} named \alg{gentle\_reno}. Our Assignment~2 Python iperf3 client selects it on the data
+socket with \texttt{setsockopt(TCP\_CONGESTION)} and reads back the algorithm actually used.
+We compared it with CUBIC, Reno and BBR on \meta{numdests} public iperf3 servers, using
+\meta{reps} repetitions of \meta{duration}\,s tests sampled every \meta{interval}\,s
+(Linux \meta{kernel}). \GR{} had the lowest RTT inflation (\agg{gentle_reno}{rtt_inflation_mean_ms}\,ms vs.\
+\agg{cubic}{rtt_inflation_mean_ms}\,ms for CUBIC and \agg{bbr}{rtt_inflation_mean_ms}\,ms for BBR) and
+almost no retransmissions (\agg{gentle_reno}{retrans_rate_mean_pct}\,\% of bytes). It also had much lower
+throughput (mean \agg{gentle_reno}{goodput_mean_mbps}\,Mbit/s vs.\ \agg{cubic}{goodput_mean_mbps},
+\agg{reno}{goodput_mean_mbps} and \agg{bbr}{goodput_mean_mbps}\,Mbit/s). The cause is that its
+slow-start exit fires early, after which its $+0.5$\,packet/RTT growth cannot fill a
+long-RTT path within 10\,s.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ===========================================================================
+\section{Algorithm (Assignment 2, Q3(b))}
+\label{sec:design}
+
+\GR{} keeps Reno's loss-driven AIMD structure but makes both halves gentler, and adds
+RTT- and throughput-based rules for leaving slow start without a loss:
+\begin{itemize}
+  \item \textbf{Loss:} multiplicative decrease by $\beta = 0.7$ instead of $0.5$, at most once per loss episode.
+  \item \textbf{Growth:} additive increase of $a = 0.5$ packet per RTT instead of $1$.
+  \item \textbf{RTT:} leave slow start (without a cut) once the RTT rises more than $D = \max(4\,\text{ms}, \text{min\_rtt}/8)$ above the minimum, which means a queue is forming.
+  \item \textbf{Throughput:} leave slow start once the delivery rate has grown by less than 25\,\% for three rounds in a row, which means the pipe is full.
+\end{itemize}
+The original pseudocode (\file{docsapseudocodetxt}) is:
+\lstinputlisting{../docs/a2_pseudocode.txt}
+
+% ===========================================================================
+\section{Implementation}
+\label{sec:impl}
+
+The program is \file{bpfgentlerenobpfc}. It is compiled with clang to a BPF object and
+registered with \texttt{bpftool struct\_ops register}, after which \alg{gentle\_reno} appears in
+\texttt{/proc/sys/net/ipv4/tcp\_available\_congestion\_control} next to \alg{cubic}, \alg{reno}
+and \alg{bbr}. The struct that registers the hooks is at \grOps.
+
+\subsection{Division of work between the kernel and the program}
+The Linux TCP stack still does everything except the window policy: ACK processing, loss
+detection (dup ACKs, SACK, RACK, RTO timers), fast recovery with PRR (RFC~6937),
+retransmission, and RTT estimation (srtt, rttvar, RTO). It calls our hooks at each decision point:
+
+\begin{center}\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{4.0cm}>{\raggedright\arraybackslash}p{5.3cm}l}
+\toprule
+Hook & Called when & What \GR{} does & Signal \\
+\midrule
+\texttt{gr\_init} & connection established & reset per-connection state, start the first round & -- \\
+\texttt{gr\_ssthresh} & once per loss episode (enter Recovery after 3 dup ACKs/SACK/RACK, or Loss after RTO) & return $\max(\lfloor 7\,\text{cwnd}/10\rfloor, 2)$ & loss \\
+\texttt{gr\_cong\_avoid} & each ACK that advances \texttt{snd\_una}, outside recovery & slow start: $+1$ per ACKed packet; else $+1$ packet per $2\cdot\text{cwnd}$ ACKed ($=+0.5$/RTT) & RTT (ACK clock) \\
+\texttt{gr\_pkts\_acked} & each ACK, with its RTT sample & track min RTT; at each round end evaluate the slow-start exit rules & RTT, throughput \\
+\texttt{gr\_set\_state} & CA state change & after an RTO re-arm the slow-start exit & loss (timeout) \\
+\texttt{gr\_undo\_cwnd} & kernel proves a loss spurious (DSACK, timestamps) & restore $\max(\text{cwnd}, \text{prior\_cwnd})$, like Reno & loss \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{How the congestion window is updated}
+
+\paragraph{Loss (\grSsthresh).}
+\texttt{gr\_ssthresh} returns $0.7\cdot\text{cwnd}$ (at least 2). In fast recovery, PRR moves
+cwnd smoothly down to that value, so after recovery $\text{cwnd} = \text{ssthresh} = 0.7\cdot\text{cwnd}_{\text{before}}$.
+Because the kernel calls \texttt{ssthresh} only when it \emph{enters} recovery and not once per lost
+packet, the cut happens at most once per loss episode (about once per RTT). On an RTO the kernel sets
+$\text{cwnd}=1$ after calling \texttt{ssthresh}, so slow start restarts toward $0.7\cdot\text{cwnd}_{\text{before}}$,
+as in the pseudocode. The loss signals we log are retransmitted segments per interval
+($\Delta$\texttt{tcpi\_total\_retrans}), RTO count (\texttt{tcpi\_total\_rto}) and \texttt{ca\_state}
+(3 = Recovery after dup ACKs, 4 = Loss after an RTO).
+On a shallow-buffer test path we measured \texttt{ssthresh}/cwnd-before-loss at 0.70--0.73 for
+\alg{gentle\_reno}, against 0.50--0.55 for \alg{reno} and about 0.7 for \alg{cubic}.
+
+\paragraph{Growth and RTT (\grCongAvoid).}
+Growth happens per round trip. \texttt{tcp\_cong\_avoid\_ai(tp, 2*cwnd, acked)} adds one packet after
+$2\cdot\text{cwnd}$ packets are ACKed. A full window of ACKs arrives once per RTT, so this is $+0.5$
+packet/RTT. The window grows only while the sender is cwnd-limited (\texttt{tcp\_is\_cwnd\_limited} logic), as in
+every kernel algorithm.
+
+\paragraph{RTT and throughput in slow start (\grPktsAcked).}
+On every ACK the program tracks \texttt{min\_rtt\_us} (connection minimum) and
+\texttt{round\_min\_rtt\_us} (minimum within the current round). A \emph{round} starts by recording
+$\text{end\_seq}=\texttt{snd\_nxt}$ and ends when \texttt{snd\_una} passes it, i.e.\ one RTT. This is
+the round definition that CUBIC's HyStart uses. At the end of each slow-start round:
+\begin{itemize}
+  \item \textbf{Throughput:} $\text{bw} = (\texttt{delivered} - \texttt{delivered}_{\text{round start}})\cdot 10^6 / \Delta t_{\mu s}$
+  in packets/s. If $4\,\text{bw} \ge 5\,\text{full\_bw}$, then $\text{full\_bw}\leftarrow\text{bw}$ and the flat counter resets.
+  Otherwise \texttt{flat\_rounds} is incremented. Slow start ends after 3 flat rounds.
+  \item \textbf{RTT:} slow start ends if $\text{round\_min\_rtt} > \text{min\_rtt} + \max(4\,\text{ms}, \text{min\_rtt}/8)$.
+\end{itemize}
+Leaving slow start sets $\text{ssthresh} = \text{cwnd}$ with no cut, so the window reached is kept and
+growth continues at $+0.5$/RTT.
+
+\subsection{Initial state and parameters}
+Parameters are \texttt{\#define}s at \grParams; per-connection state (32 bytes in
+\texttt{icsk\_ca\_priv}, within the kernel's 104-byte limit) is at \grState; initialisation is
+\grInit. All arithmetic is integer because BPF has no floating point.
+
+\begin{center}\small
+\begin{tabular}{l>{\raggedright\arraybackslash}p{5.6cm}>{\raggedright\arraybackslash}p{4.9cm}}
+\toprule
+Quantity & Value & Where \\
+\midrule
+cwnd & 10 packets (kernel IW10) & kernel default \\
+ssthresh & $\infty$ (\texttt{TCP\_INFINITE\_SSTHRESH}): start in slow start & kernel default \\
+min\_rtt, round\_min\_rtt & $\infty$ (\texttt{0xffffffff}) & \texttt{gr\_init} \\
+full\_bw, flat\_rounds, ss\_done & 0 & \texttt{gr\_init} \\
+round & \texttt{snd\_nxt}, \texttt{tcp\_mstamp}, \texttt{delivered} at init & \texttt{start\_round} \\
+$\beta$ & 7/10 & \texttt{BETA\_NUM}/\texttt{BETA\_DEN} \\
+$a$ & 1/2 packet per RTT & \texttt{AI\_DIVISOR = 2} \\
+Minimum cwnd after a cut & 2 & \texttt{MIN\_CWND} \\
+$D$ & $\max(4\,\text{ms}, \text{min\_rtt}/8)$ & \texttt{SS\_DELAY\_MIN\_US}, \texttt{SS\_DELAY\_SHIFT} \\
+Throughput plateau & $<1.25\times$ growth for 3 rounds & \texttt{SS\_BW\_GROWTH\_*}, \texttt{SS\_FLAT\_ROUNDS} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The program also keeps global counters (\texttt{stat\_init}, \texttt{stat\_loss\_events},
+\texttt{stat\_ss\_exit\_delay}, \texttt{stat\_ss\_exit\_bw}, \texttt{stat\_undo}). They are read with
+\texttt{sudo make -C bpf stats} and snapshotted before and after each experiment into
+\texttt{metadata.json} (\pyBpfSnapshot).
+
+\subsection{Changes from the Assignment 2 pseudocode}
+\begin{enumerate}
+  \item \textbf{The RTT rule uses the minimum RTT sample in the round, not srtt.} srtt is a smoothed
+  average that lags several RTTs behind and is inflated by delayed ACKs and jitter. The per-round
+  minimum reacts within one round and ignores single noisy samples. Linux HyStart makes the same choice. $D$ is unchanged.
+  \item \textbf{The slow-start exit is evaluated at most once per slow-start phase} (\texttt{ss\_done})
+  and is re-armed after an RTO (\texttt{gr\_set\_state}, \grSetState). The pseudocode left this implicit.
+  \item \textbf{Cut and recovery mechanics come from the kernel.} \texttt{ssthresh()} supplies only the
+  target, and PRR moves cwnd to it during recovery. The end state matches the pseudocode's ``cwnd $\leftarrow$ ssthresh''.
+  \item \textbf{Undo of spurious cuts.} The kernel requires an \texttt{undo\_cwnd} hook (\grUndo).
+  It restores the pre-loss window when a retransmission turns out to be unnecessary, as Reno does.
+  \item \textbf{Growth only when cwnd-limited.} This prevents window inflation when the application or the
+  receive window is the real limit.
+  \item \textbf{Fixed-point parameters:} $\beta = 7/10$ in integers, and $a = 0.5$ as ``$+1$ per $2\cdot$cwnd ACKs''.
+\end{enumerate}
+
+% ===========================================================================
+\section{Selecting the algorithm on the data socket}
+\label{sec:select}
+
+The Assignment~2 client (\file{iperfclientpy}) sets the algorithm on the \emph{data} socket before
+\texttt{connect()}, so the whole connection, including slow start, uses it (\pyConnect, which calls
+\pySetCC):
+\begin{lstlisting}[language=Python]
+sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, b"gentle_reno")
+sock.connect(addr)
+actual = sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, 16)
+\end{lstlisting}
+After the connection is up the client reads the algorithm back (\pyGetCC) and stores it as
+\texttt{algorithm\_actual} in every sample row and every table. In every run of this experiment the requested and actual
+algorithm matched (the ``actual'' column of Table~\ref{tab:agg} and the panel titles of the figures).
+Before any test, \texttt{preflight} (\pyPreflight) opens a socket for each algorithm and records what the kernel
+reports: \alg{cubic}$\to$\alg{\csname cccheck@cubic\endcsname},
+\alg{reno}$\to$\alg{\csname cccheck@reno\endcsname}, \alg{bbr}$\to$\alg{\csname cccheck@bbr\endcsname},
+\alg{gentle\_reno}$\to$\alg{\csname cccheck@gentle_reno\endcsname}.
+
+% ===========================================================================
+\section{Experimental setup}
+\label{sec:setup}
+
+\begin{center}\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{4cm}>{\raggedright\arraybackslash}p{11.5cm}}
+\toprule
+Host & \texttt{\meta{uname}} \\
+Kernel & \texttt{\meta{kernel}} (aarch64, Ubuntu) \\
+Available algorithms & \texttt{\meta{availcc}} (default \texttt{\meta{defaultcc}}) \\
+Python & \meta{python} \\
+Command & \texttt{\meta{command}} \\
+Run directory & \texttt{\rundir} (started \meta{created}, finished \meta{finished}) \\
+Destinations & \meta{numdests}, drawn at random (seed \meta{seed}) from \meta{serversparsed} servers in \texttt{servers.csv}; candidates that failed a 3\,s probe were replaced (\meta{selattempts} attempts, \pySelect) \\
+Duration / sampling & \meta{duration}\,s per test, sampled every \meta{interval}\,s, \meta{pause}\,s pause between tests \\
+Repetitions & \meta{reps} of every destination $\times$ algorithm: \stat{order}{total} scheduled tests, \stat{order}{ok} completed \\
+Failed tests & \stat{order}{failed}, all at \stat{order}{faileddests} (\texttt{connect\_error}: the server refused the connection). They are reported, not retried into the statistics. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Destinations.} All four algorithms used the same \meta{numdests} destinations:
+
+\begin{center}\small\input{generated/destinations.tex}\end{center}
+
+\noindent\textbf{Test order.} For each repetition, for each destination, the four algorithms run
+back to back. Their order is rotated by $(\text{rep} + \text{destination index}) \bmod 4$, so no
+algorithm always goes first and slow drift in path conditions is spread across algorithms
+(\pyRunExperiments). The full order is listed in Appendix~\ref{app:order} and in
+\texttt{test\_order.csv}.
+
+\noindent\textbf{Logged per sample} (\pySample; \texttt{samples/*.csv}): goodput
+($\Delta$\texttt{tcpi\_bytes\_acked}$/\Delta t$), \texttt{snd\_cwnd}, \texttt{snd\_ssthresh},
+srtt, rttvar, min\_rtt, RTO, kernel delivery rate, and the loss signals: $\Delta$\texttt{tcpi\_total\_retrans}
+per interval, \texttt{bytes\_retrans}, \texttt{lost}, \texttt{total\_rto} and \texttt{ca\_state}.
+
+\noindent\textbf{Representative destination.} \texttt{\meta{repdest}}. The analysis picks the destination
+with complete data for every algorithm whose median goodput is closest to the median over all
+destinations (\pyChooseRep). All four algorithms are plotted for this destination with
+identical axis limits.
+
+% ===========================================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{Time series and scatter plots (A2 Q2(b), all four algorithms)}
+
+Figures~\ref{fig:ts} and~\ref{fig:sc} repeat the Assignment~2 Q2(b) plots for all four algorithms on
+the representative destination, side by side with shared axes. The individual per-algorithm
+versions are in Appendix~\ref{app:plots}. They are generated by \texttt{make\_plots} (\pyMakePlots),
+using \texttt{plot\_timeseries} (\pyPlotTs) and \texttt{plot\_scatter} (\pyPlotScatter).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{\plotdir q3_timeseries_compare.pdf}
+  \caption{Time series at \texttt{\meta{repdest}}, repetition 1: congestion window and ssthresh,
+  RTT (srtt, srtt$\pm$rttvar, min\_rtt), retransmitted segments per interval (loss signal, symlog),
+  and goodput. Columns are CUBIC, Reno, BBR and \GR{}, each titled with the requested and actual algorithm;
+  every row uses the same y-axis across algorithms. File: \texttt{plots/q3\_timeseries\_compare.pdf}.}
+  \label{fig:ts}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{\plotdir q3_scatter_compare.pdf}
+  \caption{Goodput against cwnd, srtt and retransmissions per interval at \texttt{\meta{repdest}},
+  all repetitions, with the Pearson correlation in each panel. Same axes for all algorithms.
+  File: \texttt{plots/q3\_scatter\_compare.pdf}.}
+  \label{fig:sc}
+\end{figure}
+
+\subsection{Aggregate throughput and RTT statistics}
+
+Table~\ref{tab:agg} pools every \meta{interval}\,s interval sample of every completed run (all destinations
+and repetitions). Percentiles use \texttt{numpy.percentile} with its default linear interpolation
+between order statistics (Hyndman--Fan type~7). RTT inflation, retransmission rate and RTO count are
+computed per run and then averaged. The code is \texttt{build\_tables} (\pyBuildTables) and
+\texttt{run\_stats} (\pyRunStats).
+
+\begin{table}[H]
+  \centering\small
+  \input{generated/aggregate.tex}
+  \caption{Aggregate statistics per algorithm. Source: \texttt{tables/aggregate\_by\_algorithm.csv}.
+  The ``actual'' algorithm recorded on every socket was
+  \alg{\agg{cubic}{algorithm_actual}}, \alg{\agg{reno}{algorithm_actual}}, \alg{\agg{bbr}{algorithm_actual}},
+  \alg{\agg{gentle_reno}{algorithm_actual}} respectively.}
+  \label{tab:agg}
+\end{table}
+
+Tables~\ref{tab:pdg} and~\ref{tab:pdr} break the results down by destination. Each cell is the mean
+$\pm$ standard deviation over repetitions of the per-run mean. Bold marks the best algorithm on that
+path, and a superscript gives the number of completed runs when it is not \meta{reps}.
+
+\begin{table}[H]
+  \centering\small
+  \input{generated/per_dest_goodput.tex}
+  \caption{Mean goodput per destination [Mbit/s]. Source: \texttt{tables/algorithm\_comparison.csv}.}
+  \label{tab:pdg}
+\end{table}
+
+\begin{table}[H]
+  \centering\small
+  \input{generated/per_dest_rtt.tex}
+  \caption{Mean srtt per destination [ms]; bold = lowest. Source: \texttt{tables/algorithm\_comparison.csv}.}
+  \label{tab:pdr}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{\plotdir q3_regimes.pdf}
+  \caption{Per-run mean goodput and srtt for each destination (top), and goodput against the path's
+  min RTT and against the retransmission rate (bottom). One marker per run. Generated by
+  \texttt{plot\_regimes} (\pyPlotRegimes). File: \texttt{plots/q3\_regimes.pdf}.}
+  \label{fig:regimes}
+\end{figure}
+
+\subsection{What the eBPF program saw}
+Counters read from the program after the experiment: \bpfstat{stat_init} connections used
+\alg{gentle\_reno}. Slow start ended through the throughput-plateau rule \bpfstat{stat_ss_exit_bw} times
+and through the RTT-rise rule \bpfstat{stat_ss_exit_delay} times. There were \bpfstat{stat_loss_events}
+loss episodes (\texttt{ssthresh} calls) and \bpfstat{stat_undo} spurious-loss undos.
+The mean congestion window was \stat{cwnd}{gentle_reno@seg} segments for \GR{},
+compared with \stat{cwnd}{cubic@seg} (CUBIC), \stat{cwnd}{reno@seg} (Reno) and
+\stat{cwnd}{bbr@seg} (BBR). As a fraction of each path's BDP (the largest
+delivery-rate $\times$ min-RTT estimate any algorithm reached on that destination), the mean
+window was \stat{cwnd}{gentle_reno@pathbdp}\,\% for \GR{}, \stat{cwnd}{cubic@pathbdp}\,\% for CUBIC,
+\stat{cwnd}{reno@pathbdp}\,\% for Reno and \stat{cwnd}{bbr@pathbdp}\,\% for BBR.
+
+% ===========================================================================
+\section{Discussion of the observed differences}
+\label{sec:discussion}
+
+\paragraph{BBR: highest throughput, most queueing and loss.}
+BBR had the highest mean goodput on \emph{every} destination except the anomalous
+\texttt{speed1.fiberby.dk} (Table~\ref{tab:pdg}): \agg{bbr}{goodput_mean_mbps}\,Mbit/s overall.
+It also had the highest RTT inflation (\agg{bbr}{rtt_inflation_mean_ms}\,ms) and by far the most
+retransmissions (\agg{bbr}{retrans_rate_mean_pct}\,\% of bytes, \agg{bbr}{retrans_per_run_mean} segments per run).
+BBR (v1 in this kernel) does not treat loss as a congestion signal. It paces at its bottleneck-bandwidth
+estimate, probes with $1.25\times$ gain, and caps cwnd at about $2\times$ the estimated BDP. Its window
+sat above the path BDP (\stat{cwnd}{bbr@pathbdp}\,\%), so it keeps a standing queue and overflows
+shallow buffers. Its throughput does not collapse after loss the way the loss-based
+algorithms' does. Figure~\ref{fig:ts} shows this: BBR's cwnd stays near 4700 segments despite repeated
+retransmission bursts, while CUBIC and Reno drop to a few hundred segments after their first losses
+around $t\approx1$--$2$\,s.
+
+\paragraph{CUBIC vs.\ Reno.}
+Both are loss-based and saw similar RTT (\agg{cubic}{srtt_mean_ms} vs.\ \agg{reno}{srtt_mean_ms}\,ms) and
+retransmission rates. CUBIC was faster on average (\agg{cubic}{goodput_mean_mbps} vs.\
+\agg{reno}{goodput_mean_mbps}\,Mbit/s). It cuts by only 30\,\% (Reno halves), and its cubic growth
+function depends on time since the last loss, not on RTT. On the long-RTT paths here (most min RTTs
+are 100--250\,ms), Reno's $+1$ packet/RTT takes many seconds to regain the window after a cut. CUBIC
+returns to its previous maximum in a few seconds. The gap is largest on the low-RTT, high-bandwidth
+US paths (\texttt{wdc2}, \texttt{nyc1}), where the window can grow the most within 10\,s.
+
+\paragraph{\GR{}: lowest delay and loss, lowest throughput.}
+\GR{} had the lowest mean srtt (\agg{gentle_reno}{srtt_mean_ms}\,ms), the lowest RTT inflation
+(\agg{gentle_reno}{rtt_inflation_mean_ms}\,ms) and essentially no retransmissions
+(\agg{gentle_reno}{retrans_per_run_mean} segments per run, against more than 1000 for the others). Its
+mean goodput was only \agg{gentle_reno}{goodput_mean_mbps}\,Mbit/s. The data point to one cause:
+\begin{itemize}
+  \item The slow-start exit fired in nearly every connection, almost always through the
+  throughput-plateau rule (\bpfstat{stat_ss_exit_bw} of \bpfstat{stat_init}), at a window of roughly
+  50--200 segments in most runs. That is far below the path BDP: the mean window was only
+  \stat{cwnd}{gentle_reno@pathbdp}\,\% of BDP. In Figure~\ref{fig:ts} the \GR{} cwnd flattens within
+  the first second and never approaches the 4000+ segments the other algorithms reach.
+  \item After the exit, growth is $+0.5$ packet/RTT. At 100\,ms RTT that is only about $+50$ packets in
+  a 10\,s test, so the window never reaches the buffer and almost never causes a loss. This explains the
+  low RTT and loss, and also the low throughput. The scatter plot (Figure~\ref{fig:sc}) shows a high
+  goodput--cwnd correlation for \GR{}: it is window-limited by its own cwnd, not by the network.
+  \item The one run whose slow start did not exit early (\texttt{nyc1}, repetition~1) reached
+  292\,Mbit/s, matching CUBIC on that path. The control law can use the bandwidth once the window
+  is large.
+\end{itemize}
+The likely reason the plateau rule fires early is that some early rounds are not cwnd-limited.
+During the first RTTs the receiver's advertised window (still being autotuned up) or ACK
+aggregation can hold delivery flat for a few rounds. The rule then counts those rounds as ``pipe
+full''. BBR's full-bandwidth detector avoids this by ignoring application- or receiver-limited
+rounds. Adding the same check (skip rounds in which the flow was not cwnd-limited) and requiring the
+throughput plateau to agree with a modest RTT rise would make the exit much less premature. The
+gentle $a=0.5$ increase also makes recovery from an early exit very slow on long-RTT paths. A
+HyStart-like fallback, or a CUBIC-style growth curve after an early exit, would address that. The
+algorithm as designed in Assignment~2 is very conservative. It almost never builds a queue, but
+in 10\,s tests over 30--250\,ms paths it leaves most of the bandwidth unused. Over a much longer
+transfer its throughput would keep rising toward the path capacity.
+
+\paragraph{The \texttt{speed1.fiberby.dk} anomaly.}
+On this path every loss-based and BBR run had a median of 0.12\,Mbit/s with a short burst, and half
+of the scheduled tests failed (\stat{order}{failed} failures, all on this server). This points to
+server-side throttling. \GR{} looks ``best'' there only because 2 of its runs completed with a short
+continuous transfer. We do not draw conclusions from this destination.
+
+% ===========================================================================
+\section{Reproduction}
+\label{sec:repro}
+
+\subsection{Kernel and required features}
+\begin{itemize}
+  \item Kernel used for all results: \textbf{\texttt{\meta{kernel}}} (Ubuntu, aarch64); exact
+  \texttt{uname -a} in Section~\ref{sec:setup} and in \texttt{metadata.json}. Any Linux $\ge$ 5.13 with BTF works.
+  \item Kernel configuration:\\
+  \hspace*{1em}\texttt{CONFIG\_BPF\_SYSCALL=y}, \texttt{CONFIG\_BPF\_JIT=y}\\
+  \hspace*{1em}\texttt{CONFIG\_DEBUG\_INFO\_BTF=y} (\texttt{/sys/kernel/btf/vmlinux} must exist)\\
+  \hspace*{1em}\texttt{CONFIG\_TCP\_CONG\_ADVANCED=y}, and \texttt{CONFIG\_TCP\_CONG\_BBR} for the BBR comparison\\
+  The program uses the BPF \texttt{tcp\_congestion\_ops} \texttt{struct\_ops} and the
+  \texttt{tcp\_slow\_start} / \texttt{tcp\_cong\_avoid\_ai} kfuncs.
+  \item Tools: clang $\ge$ 12, libbpf headers (\texttt{libbpf-dev}), bpftool
+  (\texttt{linux-tools-\$(uname -r)} or \texttt{linux-tools-generic}), Python 3 with numpy and matplotlib.
+  \item Root (or \texttt{CAP\_BPF} + \texttt{CAP\_NET\_ADMIN}) to register the program and select
+  \alg{bbr}/\alg{gentle\_reno}.
+\end{itemize}
+
+\subsection{Build, load and check}
+\begin{lstlisting}[language=bash]
+sudo apt install clang llvm libbpf-dev linux-tools-common linux-tools-$(uname -r) \
+                 python3-numpy python3-matplotlib
+make -C bpf             # dump vmlinux.h from the running kernel, clang -target bpf
+sudo make -C bpf load   # bpftool struct_ops register gentle_reno.bpf.o
+cat /proc/sys/net/ipv4/tcp_available_congestion_control  # ... gentle_reno
+sudo make -C bpf status
+sudo make -C bpf stats  # program counters
+python3 -c "import socket; s=socket.socket(); \
+  s.setsockopt(6, 13, b'gentle_reno'); print(s.getsockopt(6, 13, 16))"
+sudo make -C bpf unload
+\end{lstlisting}
+See \file{bpfMakefile}.
+
+\subsection{Run the experiments and build this report}
+\begin{lstlisting}[language=bash]
+# build + load + all tests + plots
+sudo ./run_all.sh -n 10 -t 10 -i 0.2 -r 5 --seed 42
+# re-make plots and tables only
+python3 run_experiments.py --plot-only results/<run>
+# this PDF -> report/report.pdf (default: newest results/<run>)
+python3 report/make_report.py [results/<run>]
+\end{lstlisting}
+\file{runallsh} builds and registers the program, runs \file{runexperimentspy} for all four
+algorithms, and prints the program counters. \file{reportmakereportpy} (\pyReport) reads
+\texttt{metadata.json}, \texttt{test\_order.csv}, \texttt{destinations.csv} and
+\texttt{tables/*.csv} from the run directory and writes the tables and numbers in this report into
+\texttt{report/generated/}. It finds the line ranges of the linked functions in the source, then runs
+\texttt{pdflatex} on \file{reportreporttex}. Building the report needs only Python~3 and a TeX
+distribution with \texttt{booktabs}, \texttt{listings}, \texttt{ulem} and \texttt{hyperref}.
+A local network for testing without public servers is in \file{toolslocaltestbedsh}. The
+run \texttt{results/20261018-133227} is a sanity check on that local network and is not used in this report.
+
+\subsection{Raw data and configuration}
+Everything is in \texttt{\rundir/}:
+\begin{center}\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{5.4cm}>{\raggedright\arraybackslash}p{10.0cm}}
+\toprule
+File & Content \\
+\midrule
+\texttt{samples/}\allowbreak\texttt{r<rep>\_d<dest>\_<alg>.csv} & raw per-interval samples (all \texttt{TCP\_INFO} fields listed above) \\
+\texttt{runs.jsonl} & one record per test: requested and actual algorithm, status, server results, errors \\
+\texttt{metadata.json} & kernel, available/allowed algorithms, arguments, seed, \texttt{TCP\_INFO} layout, eBPF registration and counters before and after \\
+\texttt{test\_order.csv} & exact execution order, attempts and status \\
+\texttt{destinations.csv}, \texttt{selection\_log.csv} & chosen destinations and the selection probes \\
+\texttt{tables/*.\{csv,md\}} & per-run, per-destination and aggregate tables \\
+\texttt{plots/*.pdf} & every figure in this report \\
+\bottomrule
+\end{tabular}
+\end{center}
+Dependencies are in \texttt{requirements.txt} (numpy, matplotlib). The server list is \texttt{servers.csv}
+(from iperf3serverlist.net, parsed by \file{serverspy}).
+
+\subsection{Where the code is}
+\begin{center}\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{6.2cm}>{\raggedright\arraybackslash}p{9.2cm}}
+\toprule
+What & Code \\
+\midrule
+Parameters / per-connection state & \grParams, \grState \\
+Initial state & \grInit \\
+Loss response ($\beta=0.7$) & \grSsthresh \\
+Additive increase / slow start & \grCongAvoid \\
+RTT and throughput slow-start exit & \grPktsAcked \\
+RTO re-arm / spurious-loss undo & \grSetState, \grUndo \\
+Registration (\texttt{tcp\_congestion\_ops}) & \grOps \\
+Select algorithm on data socket & \pyConnect, \pySetCC \\
+Record actual algorithm & \pyGetCC, \pyRun \\
+Sampling (cwnd, RTT, goodput, loss) & \pySample \\
+Experiment loop and test order & \pyRunExperiments \\
+eBPF counter snapshot & \pyBpfSnapshot \\
+Tables and aggregate statistics & \pyBuildTables, \pyRunStats \\
+Representative destination & \pyChooseRep \\
+Figures \ref{fig:ts}, \ref{fig:sc}, \ref{fig:regimes} and Appendix~\ref{app:plots} & \pyMakePlots, \pyPlotTs, \pyPlotScatter, \pyPlotRegimes \\
+This report & \pyReport \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ===========================================================================
+\section{Use of AI tools}
+\aiuse
+
+% ===========================================================================
+\appendix
+\section{Per-algorithm plots at the representative destination}
+\label{app:plots}
+These are the Assignment~2 Q2(b) figures made separately for each algorithm, at
+\texttt{\meta{repdest}}, with the same axis limits for all four algorithms.
+
+\newcommand{\algfig}[3]{% file stem, label, file stem with escaped underscore
+\begin{figure}[H]
+  \centering
+  \includegraphics[height=0.56\textheight,keepaspectratio]{\plotdir q2_timeseries_#1.pdf}\\[4pt]
+  \includegraphics[width=\textwidth,height=0.3\textheight,keepaspectratio]{\plotdir q2_scatter_#1.pdf}
+  \caption{#2 (\texttt{#3}) at \texttt{\meta{repdest}}: time series (top, repetition 1) and scatter (bottom, all repetitions).
+  Files: \texttt{plots/q2\_timeseries\_#3.pdf}, \texttt{plots/q2\_scatter\_#3.pdf}.}
+\end{figure}}
+\algfig{cubic}{CUBIC}{cubic}
+\algfig{reno}{Reno}{reno}
+\algfig{bbr}{BBR}{bbr}
+\algfig{gentle_reno}{\GR{}}{gentle\_reno}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{\plotdir q3_timeseries_overlay.pdf}
+  \caption{The four algorithms overlaid at \texttt{\meta{repdest}}, repetition 1. File: \texttt{plots/q3\_timeseries\_overlay.pdf}.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth,page=1]{\plotdir q1_goodput_timeseries.pdf}
+  \caption{Goodput time series for every destination and algorithm (page 1 of 2). File: \texttt{plots/q1\_goodput\_timeseries.pdf}.}
+\end{figure}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth,page=2]{\plotdir q1_goodput_timeseries.pdf}
+  \caption{Goodput time series for every destination and algorithm (page 2 of 2).}
+\end{figure}
+
+\section{Test order}
+\label{app:order}
+Execution order of all \stat{order}{total} tests (\sout{struck out} = failed). Each line runs the
+four algorithms back to back on one destination.
+{\small\input{generated/order.tex}}
+
+\end{document}

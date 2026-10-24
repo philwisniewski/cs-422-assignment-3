@@ -1,0 +1,18 @@
+\begin{tabular}{lrrrr}
+\toprule
+Statistic & \textbf{CUBIC} & \textbf{Reno} & \textbf{BBR} & \textbf{Gentle Reno} \\
+\midrule
+Runs / interval samples & 48 / 2400 & 47 / 2350 & 48 / 2400 & 47 / 2350 \\
+Goodput mean [Mbit/s] & 132.2 & 104.0 & 171.2 & 25.5 \\
+Goodput median [Mbit/s] & 76.7 & 53.3 & 108.4 & 10.1 \\
+Goodput p5 [Mbit/s] & 0.12 & 0.12 & 0.12 & 1.27 \\
+Goodput p95 [Mbit/s] & 394.4 & 322.7 & 633.6 & 74.8 \\
+srtt mean [ms] & 137.0 & 139.2 & 146.5 & 135.6 \\
+srtt median [ms] & 130.6 & 132.9 & 135.8 & 130.6 \\
+srtt p95 [ms] & 250.8 & 253.1 & 270.1 & 247.8 \\
+RTT inflation (srtt $-$ min\_rtt) [ms] & 7.29 & 7.63 & 14.84 & 4.46 \\
+Retransmitted bytes [\%] & 1.63 & 1.86 & 5.09 & 0.01 \\
+Retransmitted segments / run & 1120 & 1044 & 7760 & 17 \\
+RTOs / run & 0.02 & 0.00 & 0.04 & 0.00 \\
+\bottomrule
+\end{tabular}
